@@ -21,6 +21,7 @@ struct Block {
 struct FirstBlockData {
     uint32_t magic_number;
     uint32_t block_count;
+    block_idx_t root_directory_idx;
 };
 
 struct FirstBlock {
@@ -74,23 +75,27 @@ class BlockyLLFS {
     BlockBitmap* block_bitmap_;
 };
 
-struct DirectoryEntry {
-    char name[60];
+BlockyLLFS* format(BlockDevice* block_device);
 
-    // Zero means deleted, can be reused.
+struct DirectoryEntry {
+    char name[59];
+    bool is_directory;
     block_idx_t first_block_idx;
 };
 
 struct DisplayedFileInfo {
-    char name[60];
+    char name[59];
+    bool is_directory;
     file_size_t size;
 };
 
 class Directory {
     public:
     Directory(BlockyLLFS* blocky_llfs, block_idx_t first_block_idx);
-    ReadableFile* find(const char* name);
-    void add(const char* name, const std::byte* buffer, int bytes_to_write);
+    ReadableFile* open_file(const char* name);
+    Directory* cd(const char* name);
+    void write_file(const char* name, const std::byte* buffer, int bytes_to_write);
+    Directory* mkdir(const char* name);
     void remove(const char* name);
 
     void write_entries();
@@ -101,6 +106,18 @@ class Directory {
     BlockyLLFS* blocky_llfs_;
     block_idx_t first_block_idx_;
     std::vector<DirectoryEntry> entries_;
+};
+
+class LLFS {
+    public:
+    LLFS(BlockDevice* block_device);
+    ~LLFS();
+
+    Directory* get_root_directory() const { return root_directory_; }
+
+    private:
+    BlockyLLFS* blocky_llfs_;
+    Directory* root_directory_;
 };
 
 #endif

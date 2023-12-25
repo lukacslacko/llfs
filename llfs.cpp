@@ -1,5 +1,7 @@
 #include "llfs.h"
 
+#include <stdio.h>
+
 ReadableFile::ReadableFile(block_idx_t first_block_idx, BlockDevice* block_device) {
     block_device_ = block_device;
     block_device_->read_block(first_block_idx, reinterpret_cast<std::byte*>(&current_block_));
@@ -147,21 +149,49 @@ Directory::Directory(BlockyLLFS* blocky_llfs, block_idx_t first_block_idx) {
     delete file;
 }
 
-ReadableFile* Directory::find(const char* name) {
+ReadableFile* Directory::open_file(const char* name) {
     for (DirectoryEntry entry : entries_) {
         if (strcmp(entry.name, name) == 0) {
+            if (entry.is_directory) {
+                printf("Cannot open directory %s as file\n", name);
+                return 0;
+            }
             return new ReadableFile(entry.first_block_idx, blocky_llfs_->get_block_device());
         }
     }
     return 0;
 }
 
-void Directory::add(const char* name, const std::byte* buffer, int bytes_to_write) {
+Directory* Directory::cd(const char* name) {
+    for (DirectoryEntry entry : entries_) {
+        if (strcmp(entry.name, name) == 0) {
+            if (!entry.is_directory) {
+                printf("Cannot cd into file %s\n", name);
+                return 0;
+            }
+            return new Directory(blocky_llfs_, entry.first_block_idx);
+        }
+    }
+    return 0;
+}
+
+void Directory::write_file(const char* name, const std::byte* buffer, int bytes_to_write) {
     DirectoryEntry entry;
     strcpy(entry.name, name);
+    entry.is_directory = false;
     entry.first_block_idx = blocky_llfs_->write_file(buffer, bytes_to_write);
     entries_.push_back(entry);
     write_entries();
+}
+
+Directory* Directory::mkdir(const char* name) {
+    DirectoryEntry entry;
+    strcpy(entry.name, name);
+    entry.is_directory = true;
+    entry.first_block_idx = blocky_llfs_->write_file(0, 0);
+    entries_.push_back(entry);
+    write_entries();
+    return new Directory(blocky_llfs_, entry.first_block_idx);
 }
 
 void Directory::remove(const char* name) {
@@ -183,4 +213,42 @@ void Directory::write_entries() {
     }
     first_block_idx_ = blocky_llfs_->write_file(buffer, entries_.size() * sizeof(DirectoryEntry));
     delete[] buffer;
+}
+
+std::vector<DisplayedFileInfo> Directory::list() {
+    std::vector<DisplayedFileInfo> result;
+    for (DirectoryEntry entry : entries_) {
+        DisplayedFileInfo info;
+        strcpy(info.name, entry.name);
+        Block file_first_block;
+        blocky_llfs_->get_block_device()->read_block(entry.first_block_idx, reinterpret_cast<std::byte*>(&file_first_block));
+        info.size = file_first_block.remaining_size;
+        result.push_back(info);
+    }
+    return result;
+}
+
+LLFS::LLFS(BlockDevice* block_device) {
+    blocky_llfs_ = new BlockyLLFS(block_device);
+    FirstBlock first_block;
+    block_device->read_block(1, reinterpret_cast<std::byte*>(&first_block));
+    root_directory_ = new Directory(blocky_llfs_, first_block.data.root_directory_idx);
+}
+
+LLFS::~LLFS() {
+    delete root_directory_;
+    delete blocky_llfs_;
+}
+
+BlockyLLFS* format(BlockDevice* block_device) {
+    FirstBlock first_block;
+    first_block.data.magic_number = MAGIC;
+    first_block.data.block_count = block_device->get_block_count();
+    int bitmap_num_blocks = first_block.data.block_count / 8 / BLOCK_SIZE;
+    // Plus one is for the root directory.
+    for (int i = 0; i < bitmap_num_blocks + 1; i++) {
+        block_device->write_block(2 + i, reinterpret_cast<std::byte*>(new std::byte[BLOCK_SIZE]));
+    }
+    first_block.data.root_directory_idx = bitmap_num_blocks + 2;
+    block_device->write_block(1, reinterpret_cast<std::byte*>(&first_block));
 }

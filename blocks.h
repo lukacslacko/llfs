@@ -12,6 +12,7 @@ class BlockDevice {
     public:
     virtual void read_block(block_idx_t block_idx, std::byte* buffer) = 0;
     virtual void write_block(block_idx_t block_idx, const std::byte* buffer) = 0;
+    block_idx_t get_block_count() = 0;
 };
 
 #endif
