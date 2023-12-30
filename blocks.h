@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #define BLOCK_SIZE 512
 
@@ -12,9 +13,10 @@ using block_idx_t = uint32_t;
 
 class BlockDevice {
     public:
-    virtual void read_block(block_idx_t block_idx, std::byte* buffer) = 0;
-    virtual void write_block(block_idx_t block_idx, const std::byte* buffer) = 0;
-    block_idx_t get_block_count() = 0;
+    virtual void read_block(block_idx_t block_idx, uint8_t* buffer) = 0;
+    virtual void write_block(block_idx_t block_idx, const uint8_t* buffer) = 0;
+    virtual block_idx_t get_block_count() = 0;
+    virtual std::string dump_blocks(block_idx_t start, block_idx_t end);
 };
 
 class InMemoryBlockDevice : public BlockDevice {
@@ -22,13 +24,13 @@ class InMemoryBlockDevice : public BlockDevice {
     InMemoryBlockDevice(block_idx_t block_count);
     ~InMemoryBlockDevice();
 
-    void read_block(block_idx_t block_idx, std::byte* buffer) override;
-    void write_block(block_idx_t block_idx, const std::byte* buffer) override;
+    void read_block(block_idx_t block_idx, uint8_t* buffer) override;
+    void write_block(block_idx_t block_idx, const uint8_t* buffer) override;
     block_idx_t get_block_count() override;
 
     private:
     block_idx_t block_count_;
-    std::byte* blocks_;
+    uint8_t* blocks_;
 };
 
 #endif

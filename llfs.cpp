@@ -1,24 +1,25 @@
 #include "llfs.h"
 
+#include <cstring>
 #include <stdio.h>
 
 ReadableFile::ReadableFile(block_idx_t first_block_idx, BlockDevice* block_device) {
     block_device_ = block_device;
-    block_device_->read_block(first_block_idx, reinterpret_cast<std::byte*>(&current_block_));
+    block_device_->read_block(first_block_idx, reinterpret_cast<uint8_t*>(&current_block_));
     current_block_offset_ = 0;
 }
 
 ReadableFile::~ReadableFile() {
 }
 
-int ReadableFile::read(std::byte* buffer, int bytes_to_read) {
+int ReadableFile::read(uint8_t* buffer, int bytes_to_read) {
     int bytes_read = 0;
     while (bytes_read < bytes_to_read && !eof()) {
         buffer[bytes_read] = current_block_.data[current_block_offset_];
         bytes_read++;
         current_block_offset_++;
         if (current_block_offset_ == BLOCK_CONTENTS_SIZE && !eof()) {
-            block_device_->read_block(current_block_.next_block, reinterpret_cast<std::byte*>(&current_block_));
+            block_device_->read_block(current_block_.next_block, reinterpret_cast<uint8_t*>(&current_block_));
             current_block_offset_ = 0;
         }
     }
@@ -31,14 +32,14 @@ bool ReadableFile::eof() const {
 
 BlockBitmap::BlockBitmap(BlockDevice* block_device) {
     block_device_ = block_device;
-    block_device_->read_block(1, reinterpret_cast<std::byte*>(&first_block_));
-    std::byte buffer[BLOCK_SIZE];
+    block_device_->read_block(1, reinterpret_cast<uint8_t*>(&first_block_));
+    uint8_t buffer[BLOCK_SIZE];
     const int bitmap_num_blocks = first_block_.data.block_count / 8 / BLOCK_SIZE;
     for (int i = 0; i < bitmap_num_blocks; i++) {
         block_device_->read_block(2 + i, buffer);
         for (int j = 0; j < BLOCK_SIZE; j++) {
             for (int k = 0; k < 8; k++) {
-                bitmap_.push_back(std::byte(0) != (buffer[j] & (std::byte(1) << k)));
+                bitmap_.push_back(uint8_t(0) != (buffer[j] & (uint8_t(1) << k)));
             }
         }
     }
@@ -55,14 +56,14 @@ int BlockBitmap::get_free_block_count() const {
 }
 
 void BlockBitmap::write_bitmap() {
-    std::byte buffer[BLOCK_SIZE];
+    uint8_t buffer[BLOCK_SIZE];
     const int bitmap_num_blocks = first_block_.data.block_count / 8 / BLOCK_SIZE;
     for (int i = 0; i < bitmap_num_blocks; i++) {
         for (int j = 0; j < BLOCK_SIZE; j++) {
-            buffer[j] = std::byte(0);
+            buffer[j] = uint8_t(0);
             for (int k = 0; k < 8; k++) {
                 if (bitmap_[i * BLOCK_SIZE * 8 + j * 8 + k]) {
-                    buffer[j] |= std::byte(1) << k;
+                    buffer[j] |= uint8_t(1) << k;
                 }
             }
         }
@@ -101,7 +102,7 @@ ReadableFile* BlockyLLFS::open_file(block_idx_t first_block_idx) {
     return new ReadableFile(first_block_idx, block_device_);
 }
 
-block_idx_t BlockyLLFS::write_file(const std::byte* buffer, int bytes_to_write) {
+block_idx_t BlockyLLFS::write_file(const uint8_t* buffer, int bytes_to_write) {
     block_idx_t first_block_idx = block_bitmap_->allocate_block(false);
     block_idx_t current_block_idx = first_block_idx;
     int bytes_written = 0;
@@ -114,13 +115,13 @@ block_idx_t BlockyLLFS::write_file(const std::byte* buffer, int bytes_to_write) 
                 block.data[i] = buffer[bytes_written];
                 bytes_written++;
             } else {
-                block.data[i] = std::byte(0);
+                block.data[i] = uint8_t(0);
             }
         }
         if (bytes_written < bytes_to_write) {
             block.next_block = block_bitmap_->allocate_block(false);
         }
-        block_device_->write_block(current_block_idx, reinterpret_cast<std::byte*>(&block));
+        block_device_->write_block(current_block_idx, reinterpret_cast<uint8_t*>(&block));
         current_block_idx = block.next_block;
     }
     block_bitmap_->write_bitmap();
@@ -131,7 +132,7 @@ void BlockyLLFS::delete_file(block_idx_t first_block_idx) {
     Block block;
     block_idx_t current_block_idx = first_block_idx;
     while (current_block_idx != 0) {
-        block_device_->read_block(current_block_idx, reinterpret_cast<std::byte*>(&block));
+        block_device_->read_block(current_block_idx, reinterpret_cast<uint8_t*>(&block));
         block_bitmap_->release(current_block_idx, false);
         current_block_idx = block.next_block;
     }
@@ -143,7 +144,7 @@ Directory::Directory(BlockyLLFS* blocky_llfs, block_idx_t first_block_idx) {
     first_block_idx_ = first_block_idx;
     ReadableFile* file = blocky_llfs_->open_file(first_block_idx);
     DirectoryEntry entry;
-    while (file->read(reinterpret_cast<std::byte*>(&entry), sizeof(DirectoryEntry)) == sizeof(DirectoryEntry)) {
+    while (file->read(reinterpret_cast<uint8_t*>(&entry), sizeof(DirectoryEntry)) == sizeof(DirectoryEntry)) {
         entries_.push_back(entry);
     }
     delete file;
@@ -175,7 +176,7 @@ Directory* Directory::cd(const char* name) {
     return 0;
 }
 
-void Directory::write_file(const char* name, const std::byte* buffer, int bytes_to_write) {
+void Directory::write_file(const char* name, const uint8_t* buffer, int bytes_to_write) {
     DirectoryEntry entry;
     strcpy(entry.name, name);
     entry.is_directory = false;
@@ -207,7 +208,7 @@ void Directory::remove(const char* name) {
 
 void Directory::write_entries() {
     blocky_llfs_->delete_file(first_block_idx_);
-    std::byte* buffer = new std::byte[entries_.size() * sizeof(DirectoryEntry)];
+    uint8_t* buffer = new uint8_t[entries_.size() * sizeof(DirectoryEntry)];
     for (int i = 0; i < entries_.size(); i++) {
         memcpy(buffer + i * sizeof(DirectoryEntry), &entries_[i], sizeof(DirectoryEntry));
     }
@@ -221,7 +222,7 @@ std::vector<DisplayedFileInfo> Directory::list() {
         DisplayedFileInfo info;
         strcpy(info.name, entry.name);
         Block file_first_block;
-        blocky_llfs_->get_block_device()->read_block(entry.first_block_idx, reinterpret_cast<std::byte*>(&file_first_block));
+        blocky_llfs_->get_block_device()->read_block(entry.first_block_idx, reinterpret_cast<uint8_t*>(&file_first_block));
         info.size = file_first_block.remaining_size;
         result.push_back(info);
     }
@@ -231,7 +232,7 @@ std::vector<DisplayedFileInfo> Directory::list() {
 LLFS::LLFS(BlockDevice* block_device) {
     blocky_llfs_ = new BlockyLLFS(block_device);
     FirstBlock first_block;
-    block_device->read_block(1, reinterpret_cast<std::byte*>(&first_block));
+    block_device->read_block(1, reinterpret_cast<uint8_t*>(&first_block));
     root_directory_ = new Directory(blocky_llfs_, first_block.data.root_directory_idx);
 }
 
@@ -240,15 +241,19 @@ LLFS::~LLFS() {
     delete blocky_llfs_;
 }
 
-BlockyLLFS* format(BlockDevice* block_device) {
+void format(BlockDevice* block_device) {
     FirstBlock first_block;
     first_block.data.magic_number = MAGIC;
     first_block.data.block_count = block_device->get_block_count();
     int bitmap_num_blocks = first_block.data.block_count / 8 / BLOCK_SIZE;
     // Plus one is for the root directory.
     for (int i = 0; i < bitmap_num_blocks + 1; i++) {
-        block_device->write_block(2 + i, reinterpret_cast<std::byte*>(new std::byte[BLOCK_SIZE]));
+        uint8_t zeros[BLOCK_SIZE] = {0};
+        if (i == 0) {
+            for (int j = 0; j < bitmap_num_blocks + 2; ++j) zeros[j/8] |= 1<<(j%8);
+        }
+        block_device->write_block(2 + i, zeros);
     }
     first_block.data.root_directory_idx = bitmap_num_blocks + 2;
-    block_device->write_block(1, reinterpret_cast<std::byte*>(&first_block));
+    block_device->write_block(1, reinterpret_cast<uint8_t*>(&first_block));
 }

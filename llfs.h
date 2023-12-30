@@ -6,7 +6,7 @@
 #include "blocks.h"
 
 // MAGIC is low-endian "LLFS" in ASCII
-#define MAGIC 0x5346464c
+#define MAGIC 0x53464c4c
 
 using file_size_t = uint32_t;
 
@@ -15,7 +15,7 @@ using file_size_t = uint32_t;
 struct Block {
     file_size_t remaining_size;
     block_idx_t next_block;
-    std::byte data[BLOCK_CONTENTS_SIZE];
+    uint8_t data[BLOCK_CONTENTS_SIZE];
 };
 
 struct FirstBlockData {
@@ -26,7 +26,7 @@ struct FirstBlockData {
 
 struct FirstBlock {
     FirstBlockData data;
-    std::byte padding[BLOCK_SIZE - sizeof(FirstBlockData)];
+    uint8_t padding[BLOCK_SIZE - sizeof(FirstBlockData)];
 };
 
 class ReadableFile {
@@ -34,7 +34,7 @@ class ReadableFile {
     ReadableFile(block_idx_t first_block_idx, BlockDevice* block_device);
     ~ReadableFile();
 
-    int read(std::byte* buffer, int bytes_to_read);
+    int read(uint8_t* buffer, int bytes_to_read);
     bool eof() const;
 
     private:
@@ -65,7 +65,7 @@ class BlockyLLFS {
     ~BlockyLLFS();
 
     ReadableFile* open_file(block_idx_t first_block_idx);
-    block_idx_t write_file(const std::byte* buffer, int bytes_to_write);
+    block_idx_t write_file(const uint8_t* buffer, int bytes_to_write);
     void delete_file(block_idx_t first_block_idx);
 
     BlockDevice* get_block_device() const { return block_device_; }
@@ -75,7 +75,7 @@ class BlockyLLFS {
     BlockBitmap* block_bitmap_;
 };
 
-BlockyLLFS* format(BlockDevice* block_device);
+void format(BlockDevice* block_device);
 
 struct DirectoryEntry {
     char name[59];
@@ -94,7 +94,7 @@ class Directory {
     Directory(BlockyLLFS* blocky_llfs, block_idx_t first_block_idx);
     ReadableFile* open_file(const char* name);
     Directory* cd(const char* name);
-    void write_file(const char* name, const std::byte* buffer, int bytes_to_write);
+    void write_file(const char* name, const uint8_t* buffer, int bytes_to_write);
     Directory* mkdir(const char* name);
     void remove(const char* name);
 
